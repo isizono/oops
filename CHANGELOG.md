@@ -2,6 +2,10 @@
 
 English | [日本語](CHANGELOG.ja.md)
 
+## Unreleased
+
+- Fixed: the report line after `oops` and `oops --gist` says "1 line" and "1 secret masked" for a count of one, not "1 lines" and "1 secrets masked" ([#86](https://github.com/ysb3996-blip/oops/issues/86)).
+
 ## 0.6.0 - 2026-11-10
 
 - Added: `--gist` uploads the formatted text as a secret gist through the GitHub CLI (`gh gist create`) and copies the gist's URL. Secrets are always masked; `--show-secrets`, `--print` and `--json` are a usage error with it ([#44](https://github.com/ysb3996-blip/oops/issues/44)).

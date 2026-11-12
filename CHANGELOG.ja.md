@@ -2,6 +2,10 @@
 
 [English](CHANGELOG.md) | 日本語
 
+## Unreleased
+
+- 修正: `oops` と `oops --gist` が表示する報告の行で、件数が 1 のときに "1 lines"・"1 secrets masked" と複数形になっていたのを "1 line"・"1 secret masked" に直しました（[#86](https://github.com/ysb3996-blip/oops/issues/86)）。
+
 ## 0.6.0 - 2026-11-10
 
 - 追加: `--gist` で、整えた文字列を GitHub CLI（`gh gist create`）経由で secret gist に上げ、その URL をコピーします。秘密情報は必ずマスクし、`--show-secrets`・`--print`・`--json` との併用は使い方の誤りになります（[#44](https://github.com/ysb3996-blip/oops/issues/44)）。
