@@ -157,6 +157,27 @@ class SecretsTest < Minitest::Test
     end
   end
 
+  def test_sentry_organization_tokens_masked
+    payload = "eyJpYXQiOi#{'A1b2' * 12}=="
+    secret = "#{'aB3/' * 10}x+y"
+    token = "sntrys_#{payload}_#{secret}"
+    assert_equal ["[secret]", 1], mask(token)
+    assert_equal ["credential [secret] saved", 1], mask("credential #{token} saved")
+    assert_equal ["[secret]-", 1], mask("#{token}-")
+    assert_equal ["[secret]", 1], mask("sntrys_eyJ#{'a' * 800}_#{secret}")
+  end
+
+  def test_sentry_organization_token_near_misses_kept
+    payload = "eyJpYXQiOi#{'A1b2' * 12}=="
+    secret = "x" * 43
+    token = "sntrys_#{payload}_#{secret}"
+    ["sntrys_#{payload}_#{'x' * 42}", "sntrys_#{payload}_#{'x' * 44}",
+     "sntrys_eyJabcd_#{secret}", "sntrys_eyJ#{'a' * 801}_#{secret}",
+     "not#{token}", "prefix_#{token}", "#{token}_suffix", "#{token}/suffix", "sntryu_#{secret}"].each do |text|
+      assert_equal [text, 0], mask(text)
+    end
+  end
+
   def test_sendgrid_api_keys_masked
     token = "SG.#{'Ab1_' * 5}Q-." + "#{'Cd4-' * 10}x_7"
     assert_equal ["[secret]", 1], mask(token)
@@ -223,7 +244,8 @@ class SecretsTest < Minitest::Test
     ['password="', 'token="a" ', '{"api_key": "abc123","name":"x"},', "dop_v1_#{'a' * 63} ",
      "hf_#{'A' * 100_000}",
      "SG.#{'A' * 22}.#{'B' * 100_000}",
-     "shpat_#{'a' * 100_000}_suffix"].each do |unit|
+     "shpat_#{'a' * 100_000}_suffix",
+     "sntrys_eyJ#{'A' * 100_000}_#{'x' * 43}"].each do |unit|
       small = unit * (500_000 / unit.size)
       big = unit * (2_000_000 / unit.size)
       assert_operator elapsed { mask(small) }, :<, 2.0
