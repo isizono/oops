@@ -61,6 +61,18 @@ source ~/.oops/oops.plugin.zsh
 - If the Ruby on `PATH` is too old, the shell prints `oops: ... init zsh failed (oops needs Ruby 3.3 or later); recording disabled` and starts as usual, without recording.
 - Plugin managers update from the `main` branch, which can be ahead of the latest release.
 
+### With fisher (fish)
+
+For fish, [fisher](https://github.com/jorgebucaran/fisher) can install a small plugin file that replaces the `config.fish` line below. Unlike the zsh plugin it does not bring oops itself: install the gem or the Homebrew formula first.
+
+```fish
+fisher install ysb3996-blip/oops
+```
+
+- The file goes into `~/.config/fish/conf.d/`, which fish reads before `config.fish`, so it waits for the first prompt, when `config.fish` has put oops's Ruby on `PATH` (mise, rbenv, asdf, `brew shellenv`). Then the shell starts again under the recorder, so `config.fish` runs twice at the start of a tab.
+- If `oops` is not on `PATH` by then, the shell prints `oops: the oops command was not found; ...` and starts as usual, without recording.
+- An `oops init fish | source` line in `config.fish` still works and takes precedence; you do not need both.
+
 ### For Claude Code
 
 If you use Claude Code, also install the oops plugin inside it, so Claude can read the last command that failed in your tab without you pasting it (see [Claude Code plugin](#claude-code-plugin)):
@@ -106,6 +118,8 @@ To turn oops off for one shell, start it with `OOPS_DISABLE=1` (for example `OOP
 | `oops 3` / `oops -n 3` | Copy the last 3 commands (oldest first) as one code block |
 | `oops err` | Copy the last command that exited non-zero, skipping over successful ones |
 | `oops err -n 2` | Copy the last 2 failed commands (oldest first), skipping over successful ones |
+| `oops pick` | List the last 10 commands with numbers and copy the ones you type ([below](#oops-pick)) |
+| `oops grep TEXT` | Copy the last command whose command line or output contains `TEXT`, ignoring case ([below](#oops-grep)) |
 | `oops init zsh` / `oops init bash` / `oops init fish` | Print the shell snippet (for `eval`, or `\| source` in fish) |
 | `oops doctor` | Diagnose recording, hooks, clipboard, config and log size |
 | `oops pause` / `oops resume` | Stop and restart recording. While paused, nothing is written to disk |
@@ -114,24 +128,25 @@ To turn oops off for one shell, start it with `OOPS_DISABLE=1` (for example `OOP
 | `oops record -- <shell>` | Internal: runs a shell under the recorder. The snippet calls this |
 | `oops --version`, `oops --help` | Version and usage |
 
-Options for `oops`, `oops N` and `oops err`:
+Options for `oops`, `oops N`, `oops err`, `oops pick` and `oops grep`:
 
 | Option | What it does |
 |---|---|
-| `-n N` | Copy the last N commands (with `err`, the last N failed commands) |
+| `-n N` | Copy the last N commands (with `err`, the last N failed commands; with `grep`, the last N matches; with `pick`, list N) |
 | `--github` | Format for a GitHub issue or PR comment |
 | `--time` | Add the time each command started as a `# 2026-10-31 19:30:09 +09:00` line |
 | `--output-only` | Leave out the `$ command` line and copy only the output |
 | `-p`, `--print` | Write the text to stdout instead of the clipboard (no `copied:` line) |
 | `--json` | Write the commands as JSON to stdout, for scripts and agents |
 | `--gist` | Upload the text as a secret gist with the [GitHub CLI](https://cli.github.com) and copy its URL ([below](#--gist)) |
+| `--pick` | With `grep`, list the matches with numbers and copy the ones you type, as `oops pick` does |
 | `--show-secrets` | Do not mask secrets and do not apply the replace table |
 
 `N` must be a positive integer. Specify the command count once, either as a positional `N` or with `-n N`; combining them or repeating `-n` is a usage error. If fewer matching commands are available, oops copies those it finds. `-n` can be combined with the formatting options above.
 
 `oops` never copies itself: if the previous command was `oops`, you get the command before it.
 
-Exit codes: `0` copied (or printed with `--print` or `--json`, or uploaded with `--gist`), `1` nothing copied (not recording, no command yet, no failed command, paused, the clipboard command failed, or `gh` failed with `--gist`), `2` usage error.
+Exit codes: `0` copied (or printed with `--print` or `--json`, or uploaded with `--gist`), `1` nothing copied (not recording, no command yet, no failed command, no command containing the text, nothing picked, paused, the clipboard command failed, or `gh` failed with `--gist`), `2` usage error.
 
 ### Default output
 
@@ -219,6 +234,42 @@ gist: https://gist.github.com/you/4f1e8c0b2d9a7e6f5c3b1a0d9e8f7c6b (1 line)
 oops does not talk to GitHub itself: it runs `gh gist create` from the [GitHub CLI](https://cli.github.com), so you need `gh` installed and logged in once with `gh auth login`. The gist holds one file, `oops.md`, and its description is the first command line. It works with `N`, `err`, `-n`, `--github`, `--time` and `--output-only`.
 
 A secret gist is not listed or searchable, but anyone who has the URL can open it, so secrets are always masked: `--show-secrets` is a usage error with `--gist`, and so are `--print` and `--json`. Delete a gist you no longer need on gist.github.com or with `gh gist delete`. If no clipboard tool is found, the URL is still printed and oops warns that it was not copied.
+
+### `oops pick`
+
+`oops pick` lists the last 10 commands of this tab, oldest first, and asks which to copy:
+
+```
+$ oops pick
+1  $ bundle exec rake            (exit 1, 84 lines, 19:30)
+2  $ git status                  (exit 0, 6 lines, 19:31)
+3  $ curl -s localhost:3000/api  (exit 0, 1 line, 19:32)
+pick> 1 3
+copied: $ bundle exec rake (85 lines)
+```
+
+Type one number, several (`1 3`), or a range (`2-4`); they are copied in the order they ran, with the same formatting and masking as `oops 3`. An empty answer copies nothing. The list shows commands already masked. `-n 20` lists 20 instead, and the formatting options work as usual: `oops pick --github`, or `oops pick -p | less` (the list and the prompt go to stderr, so only the text reaches stdout).
+
+### `oops grep`
+
+`oops pick` only goes back 10 commands. To find an older one, search for a word from the command or from its output:
+
+```
+$ oops grep nomethoderror
+copied: $ bundle exec rspec (42 lines)
+```
+
+The text is matched as is (`.` and `*` are not special) and case does not matter; colors in the output are ignored. The words after `grep` are joined with spaces, so `oops grep no such file` needs no quotes; put `--` before text that starts with `-`. `-n 3` copies the last 3 matches, oldest first, and `--pick` lists up to 10 matches (or `-n N`) to choose from:
+
+```
+$ oops grep docker --pick
+1  $ docker compose up -d     (exit 0, 3 lines, 18:02)
+2  $ docker compose logs web  (exit 0, 120 lines, 18:40)
+pick> 2
+copied: $ docker compose logs web (120 lines)
+```
+
+The search covers this tab only. Commands are matched before masking, but what is copied or listed is masked as usual.
 
 ### `oops status`
 
@@ -395,11 +446,11 @@ To try it as your shell does, build and install the gem into the Ruby you are us
 
 ```sh
 gem build oops-cli.gemspec
-gem install ./oops-cli-0.6.0.gem     # the file name follows lib/oops/version.rb
+gem install ./oops-cli-0.8.0.gem     # the file name follows lib/oops/version.rb
 rbenv rehash                         # only with rbenv
 ```
 
-- A gem is installed per Ruby version. If a new tab uses another Ruby than the one you installed into (for example the repository pins 4.0.9, but your global Ruby is 3.3.5), the shell cannot find oops when it starts (bash prints `bash: oops: command not found`, zsh prints `command not found: oops`). Run `gem install` again under that Ruby, e.g. `RBENV_VERSION=3.3.5 gem install ./oops-cli-0.6.0.gem`.
+- A gem is installed per Ruby version. If a new tab uses another Ruby than the one you installed into (for example the repository pins 4.0.9, but your global Ruby is 3.3.5), the shell cannot find oops when it starts (bash prints `bash: oops: command not found`, zsh prints `command not found: oops`). Run `gem install` again under that Ruby, e.g. `RBENV_VERSION=3.3.5 gem install ./oops-cli-0.8.0.gem`.
 - Reinstall after every change. The installed gem is a copy, not a link to your checkout.
 - To remove it: `gem uninstall oops-cli`.
 - Put `eval "$(oops init zsh)"` in your rc file, not just at the prompt: the recorded shell reads the rc file again, and without the line it has no hooks (`oops doctor` shows `hooks: missing`).
@@ -417,7 +468,7 @@ Manual checklist before a release:
 
 ## Contributing
 
-Bug reports, ideas and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md); issues labeled `good first issue` are a good place to start. Every pull request must include the test and rubocop results and a check in a new terminal tab; see [What every pull request must include](CONTRIBUTING.md#what-every-pull-request-must-include).
+Bug reports, ideas and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md); issues labeled `good first issue` are a good place to start, and [New contributors: start here](https://github.com/ysb3996-blip/oops/issues/100) sorts them by size. Every pull request must include the test and rubocop results and a check in a new terminal tab; see [What every pull request must include](CONTRIBUTING.md#what-every-pull-request-must-include).
 
 ## Contributors
 
@@ -429,11 +480,12 @@ Thanks to everyone who has helped ([emoji key](https://allcontributors.org/docs/
 <table>
   <tbody>
     <tr>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ysb3996-blip"><img src="https://avatars.githubusercontent.com/u/257992595?v=4?s=80" width="80px;" alt="ysb3996-blip"/><br /><sub><b>ysb3996-blip</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=ysb3996-blip" title="Code">💻</a> <a href="https://github.com/ysb3996-blip/oops/commits?author=ysb3996-blip" title="Documentation">📖</a> <a href="https://github.com/ysb3996-blip/oops/commits?author=ysb3996-blip" title="Tests">⚠️</a> <a href="#maintenance-ysb3996-blip" title="Maintenance">🚧</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ricky9408"><img src="https://avatars.githubusercontent.com/u/49530170?v=4?s=80" width="80px;" alt="Sanghyuk Lee"/><br /><sub><b>Sanghyuk Lee</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=ricky9408" title="Code">💻</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/agenticsymphony-tech"><img src="https://avatars.githubusercontent.com/u/326739730?v=4?s=80" width="80px;" alt="agenticsymphony-tech"/><br /><sub><b>agenticsymphony-tech</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=agenticsymphony-tech" title="Documentation">📖</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ShahadatTest"><img src="https://avatars.githubusercontent.com/u/179203101?v=4?s=80" width="80px;" alt="ShahadatTest"/><br /><sub><b>ShahadatTest</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=ShahadatTest" title="Code">💻</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/wolf4032"><img src="https://avatars.githubusercontent.com/u/144633223?v=4?s=80" width="80px;" alt="wolf4032"/><br /><sub><b>wolf4032</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=wolf4032" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ysb3996-blip"><img src="https://avatars.githubusercontent.com/u/257992595?v=4&size=80" width="80px" height="80px" alt="ysb3996-blip"/><br /><sub><b>ysb3996-blip</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=ysb3996-blip" title="Code">💻</a> <a href="https://github.com/ysb3996-blip/oops/commits?author=ysb3996-blip" title="Documentation">📖</a> <a href="https://github.com/ysb3996-blip/oops/commits?author=ysb3996-blip" title="Tests">⚠️</a> <a href="#maintenance-ysb3996-blip" title="Maintenance">🚧</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ricky9408"><img src="https://avatars.githubusercontent.com/u/49530170?v=4&size=80" width="80px" height="80px" alt="Sanghyuk Lee"/><br /><sub><b>Sanghyuk Lee</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=ricky9408" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/agenticsymphony-tech"><img src="https://avatars.githubusercontent.com/u/326739730?v=4&size=80" width="80px" height="80px" alt="agenticsymphony-tech"/><br /><sub><b>agenticsymphony-tech</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=agenticsymphony-tech" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ShahadatTest"><img src="https://avatars.githubusercontent.com/u/179203101?v=4&size=80" width="80px" height="80px" alt="ShahadatTest"/><br /><sub><b>ShahadatTest</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=ShahadatTest" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/wolf4032"><img src="https://avatars.githubusercontent.com/u/144633223?v=4&size=80" width="80px" height="80px" alt="wolf4032"/><br /><sub><b>wolf4032</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=wolf4032" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/jdotc1"><img src="https://avatars.githubusercontent.com/u/138259519?v=4&size=80" width="80px" height="80px" alt="Jeff"/><br /><sub><b>Jeff</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=jdotc1" title="Code">💻</a></td>
     </tr>
   </tbody>
 </table>

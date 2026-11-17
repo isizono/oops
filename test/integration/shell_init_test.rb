@@ -21,7 +21,7 @@ class ShellInitIntegrationTest < Minitest::Test
              # Debian/Ubuntu's /etc/zsh/zshrc runs compinit unless this is set; on CI runners
              # (group-writable dirs on fpath) it stops at an "insecure directories" prompt.
              "skip_global_compinit" => "1" }
-    %w[OOPS_TTY OOPS_SESSION OOPS_DISABLE __OOPS_SEQ __OOPS_PID ZDOTDIR PROMPT_COMMAND BASH_ENV ENV
+    %w[OOPS_TTY OOPS_SESSION OOPS_DISABLE __OOPS_SEQ __OOPS_PID __OOPS_SHELL_VERSION ZDOTDIR PROMPT_COMMAND BASH_ENV ENV
        HISTCONTROL HISTFILE __OOPS_GHOSTTY XDG_DATA_DIRS XDG_DATA_HOME GHOSTTY_BASH_INJECT GHOSTTY_RESOURCES_DIR
        GHOSTTY_SHELL_INTEGRATION_XDG_DIR].each { |name| @env[name] = nil }
     @prompts = 0
@@ -143,6 +143,16 @@ class ShellInitIntegrationTest < Minitest::Test
     check_command_counts("bash")
   end
 
+  # oops doctor runs as a child process, so it sees the shell's version only
+  # through the variable the snippet exports.
+  def check_doctor_shell_version(shell, version_script)
+    version = IO.popen([shell, "-c", version_script], &:read).strip
+    @env["SHELL"] = "/bin/#{shell}"
+    spawn_shell(shell, "-i")
+    assert_equal 0, run_line("'#{EXE}' doctor > '#{@home}/doctor.txt'")
+    assert_includes File.read("#{@home}/doctor.txt"), "shell: #{shell} #{version}, hooks: installed\n"
+  end
+
   def check_command_counts(shell, exit_two: "(exit 2)")
     FileUtils.mkdir_p("#{@home}/cfg/oops")
     File.write("#{@home}/cfg/oops/config.yml", "clipboard: \"cat > #{@home}/clip\"\n")
@@ -156,6 +166,11 @@ class ShellInitIntegrationTest < Minitest::Test
     assert_equal 0, run_line("'#{EXE}' err -n 2")
     assert_equal "```\n$ echo first; false\nfirst\n(exit 1)\n\n$ echo third; #{exit_two}\nthird\n(exit 2)\n```\n",
                  File.read("#{@home}/clip")
+  end
+
+  def test_bash_doctor_shows_the_shell_version
+    write_bashrc
+    check_doctor_shell_version("bash", "echo $BASH_VERSION")
   end
 
   def test_bash_rc_snippet_records_commands_with_exit_and_cwd
@@ -374,6 +389,12 @@ class ShellInitIntegrationTest < Minitest::Test
     check_command_counts("zsh")
   end
 
+  def test_zsh_doctor_shows_the_shell_version
+    skip_without_zsh
+    write_zshrc
+    check_doctor_shell_version("zsh", "echo $ZSH_VERSION")
+  end
+
   def test_zsh_rc_snippet_records_commands_with_exit_and_cwd
     skip_without_zsh
     write_zshrc
@@ -471,6 +492,12 @@ class ShellInitIntegrationTest < Minitest::Test
     skip_without_fish
     write_fish_config
     check_command_counts("fish", exit_two: "sh -c 'exit 2'")
+  end
+
+  def test_fish_doctor_shows_the_shell_version
+    skip_without_fish
+    write_fish_config
+    check_doctor_shell_version("fish", "echo $version")
   end
 
   def test_fish_config_snippet_records_commands_with_exit_and_cwd
@@ -609,6 +636,53 @@ class ShellInitIntegrationTest < Minitest::Test
     assert_match(/alive-2/, @out)
     assert_includes @out, "oops: #{EXE} init zsh failed (oops needs Ruby 3.3 or later); recording disabled"
     refute_includes @out, "old ruby"
+    assert_empty session_logs
+  end
+
+  # --- fish plugin file (fisher) ---
+
+  FISH_PLUGIN = File.expand_path("../../conf.d/oops.fish", __dir__)
+
+  # As fisher installs it: the file is copied into conf.d, and oops is put on
+  # PATH by config.fish (as mise, rbenv or `brew shellenv` would), which runs
+  # after conf.d. An oops installed on this machine is taken off PATH, with
+  # fish and this Ruby kept reachable through links.
+  def write_fish_plugin(config: "set -gx PATH '#{File.dirname(EXE)}' $PATH\n")
+    FileUtils.mkdir_p("#{@home}/fishbin")
+    FileUtils.ln_s(self.class.sh_capture("command -v fish").strip, "#{@home}/fishbin/fish")
+    FileUtils.ln_s(RbConfig.ruby, "#{@home}/fishbin/ruby")
+    dirs = ENV.fetch("PATH", "").split(":").reject { |dir| File.executable?("#{dir}/oops") }
+    @env["PATH"] = ["#{@home}/fishbin", *dirs].join(":")
+    FileUtils.mkdir_p("#{@home}/cfg/fish/conf.d")
+    FileUtils.cp(FISH_PLUGIN, "#{@home}/cfg/fish/conf.d/oops.fish")
+    File.write("#{@home}/cfg/fish/config.fish", "#{config}function fish_prompt; printf '[st=%s]$ ' $status; end\n" \
+                                                "function fish_greeting; end\n")
+  end
+
+  def test_fish_plugin_records_with_oops_put_on_path_by_config_fish
+    skip_without_fish
+    write_fish_plugin
+    check_command_counts("fish", exit_two: "sh -c 'exit 2'")
+    assert_equal 1, session_logs.size
+  end
+
+  def test_fish_plugin_and_a_config_line_record_once
+    skip_without_fish
+    write_fish_plugin(config: "set -gx PATH '#{File.dirname(EXE)}' $PATH\n'#{EXE}' init fish | source\n")
+    spawn_shell("fish", "-i")
+    run_line("echo one")
+    run_line("echo two")
+    assert_equal 1, session_logs.size
+    assert_equal([["echo one", 1], ["echo two", 2]], records.map { |r| [r.cmd, r.seq] })
+  end
+
+  def test_fish_plugin_without_oops_says_so_and_leaves_the_shell_alone
+    skip_without_fish
+    write_fish_plugin(config: "")
+    spawn_shell("fish", "-i")
+    run_line("echo alive-(math 1 + 1)")
+    assert_match(/alive-2/, @out)
+    assert_includes @out, "oops: the oops command was not found"
     assert_empty session_logs
   end
 

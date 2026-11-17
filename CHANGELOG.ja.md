@@ -4,7 +4,23 @@
 
 ## Unreleased
 
+- 修正: Linear の個人用 API キー（`lin_api_`）を、コピーするコマンドと出力でマスクするようにしました（[#15](https://github.com/ysb3996-blip/oops/issues/15)）。
 - 修正: `oops` と `oops --gist` が表示する報告の行で、件数が 1 のときに "1 lines"・"1 secrets masked" と複数形になっていたのを "1 line"・"1 secret masked" に直しました（[#86](https://github.com/ysb3996-blip/oops/issues/86)）。
+
+## 0.8.0 - 2026-11-15
+
+- 追加: `oops grep TEXT` で、コマンドか出力に `TEXT` を含む直近のコマンドをコピーできるようにしました（文字はそのまま比べ、大文字小文字と出力の色は無視）。`oops pick` の 10 件より前のコマンドも探せます。`-n N` で一致した直近 N 件、`--pick` で一致したものを並べて選べ、ほかのオプションは `oops N` と同じように使えます（[#112](https://github.com/ysb3996-blip/oops/issues/112)）。
+- 修正: Sentry の組織認証トークン（`sntrys_`）を、記録されたコマンドと出力でマスクするようにしました（[#15](https://github.com/ysb3996-blip/oops/issues/15)）。[@jdotc1](https://github.com/jdotc1) さんによる貢献（[#115](https://github.com/ysb3996-blip/oops/pull/115)）。
+- 修正: Shopify のアクセストークン（`shpat_`、`shpca_`、`shppa_`）を、記録されたコマンドと出力でマスクするようにしました（[#15](https://github.com/ysb3996-blip/oops/issues/15)）。[@jdotc1](https://github.com/jdotc1) さんによる貢献（[#114](https://github.com/ysb3996-blip/oops/pull/114)）。
+- 修正: Hugging Face の `hf_` アクセストークンを、記録されたコマンドと出力でマスクするようにしました（[#15](https://github.com/ysb3996-blip/oops/issues/15)）。[@jdotc1](https://github.com/jdotc1) さんによる貢献（[#101](https://github.com/ysb3996-blip/oops/pull/101)）。
+- 修正: SendGrid API キーを、記録されたコマンドと出力でマスクするようにしました（[#15](https://github.com/ysb3996-blip/oops/issues/15)）。[@jdotc1](https://github.com/jdotc1) さんによる貢献（[#102](https://github.com/ysb3996-blip/oops/pull/102)）。
+
+## 0.7.0 - 2026-11-13
+
+- 追加: `oops pick` で、このタブの直近 10 コマンドを番号付き（マスク済みのコマンド・終了コード・行数・開始時刻）で並べ、打った番号のものをコピーできるようにしました。番号は 1 つ、複数（`1 3`）、範囲（`2-4`）で打てます。`-n N` で N 件並べ、整形のオプション・`--print`・`--json`・`--gist` は `oops N` と同じように使えます。一覧とプロンプトは標準エラーに出ます（[#41](https://github.com/ysb3996-blip/oops/issues/41)）。
+- 追加: fish で、fisher（`fisher install ysb3996-blip/oops`）から oops のフックを入れられるようにしました。`conf.d/` のプラグインのファイルは、`config.fish` が oops の Ruby を `PATH` に通し終わる最初のプロンプトまで待ってから動き、`oops` が入っていなければメッセージを出して何もしません（[#49](https://github.com/ysb3996-blip/oops/issues/49)）。
+- 修正: `oops doctor` がシェルのバージョンを出すようになりました（`shell: zsh 5.9`）。バージョンはシェルが export しない `ZSH_VERSION` / `BASH_VERSION` から読んでいたため、いつも抜けていました。初期化のスニペットが export するように直しています（[#96](https://github.com/ysb3996-blip/oops/issues/96)）。[@wolf4032](https://github.com/wolf4032) さんの報告（[#93](https://github.com/ysb3996-blip/oops/pull/93)）。開いているタブは `exec $SHELL` か新しいタブで反映されます。
+- 修正: DigitalOcean API トークンを、記録されたコマンドと出力でマスクするようにしました（[#15](https://github.com/ysb3996-blip/oops/issues/15)）。[@jdotc1](https://github.com/jdotc1) さんによる貢献（[#103](https://github.com/ysb3996-blip/oops/pull/103)）。
 
 ## 0.6.0 - 2026-11-10
 

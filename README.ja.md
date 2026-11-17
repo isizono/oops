@@ -61,6 +61,18 @@ source ~/.oops/oops.plugin.zsh
 - `PATH` の Ruby が古いと、`oops: ... init zsh failed (oops needs Ruby 3.3 or later); recording disabled` と出て、記録なしで普通に起動します。
 - プラグインマネージャーは `main` ブランチから更新するので、最新のリリースより先の内容になることがあります。
 
+### fisher で入れる（fish）
+
+fish なら、[fisher](https://github.com/jorgebucaran/fisher) で小さなプラグインのファイルを入れられます。下の「シェルの設定」にある `config.fish` の 1 行の代わりになります。zsh のプラグインと違って oops 本体は入らないので、先に gem か Homebrew で oops を入れてください。
+
+```fish
+fisher install ysb3996-blip/oops
+```
+
+- ファイルは `~/.config/fish/conf.d/` に入ります。fish はこれを `config.fish` より先に読むので、`config.fish` が oops の Ruby を `PATH` に通し終わる（mise・rbenv・asdf・`brew shellenv`）最初のプロンプトまで待ってから動きます。そこでシェルを記録用に起動し直すため、タブを開いたときに `config.fish` が 2 回動きます。
+- その時点で `oops` が `PATH` に無いと、`oops: the oops command was not found; ...` と出て、記録なしで普通に起動します。
+- `config.fish` の `oops init fish | source` の行もそのまま使え、そちらが優先されます。両方は要りません。
+
 ### Claude Code で使う場合
 
 Claude Code を使っているなら、Claude Code の中で oops プラグインも入れてください。タブで最後に失敗したコマンドを、貼り付けなしで Claude が読めるようになります（[Claude Code のプラグイン](#claude-code-のプラグイン)を参照）。
@@ -106,6 +118,8 @@ oops init fish | source
 | `oops 3` / `oops -n 3` | 直前の 3 コマンドを（古い順に）1 つのコードブロックとしてコピーする |
 | `oops err` | 終了コードが 0 以外だった直近のコマンドをコピーする（成功したコマンドは飛ばす） |
 | `oops err -n 2` | 直近の失敗した 2 コマンドを古い順にコピーする（成功したコマンドは飛ばす） |
+| `oops pick` | 直近の 10 コマンドを番号付きで並べ、打った番号のものをコピーする（[下記](#oops-pick)） |
+| `oops grep TEXT` | コマンドか出力に `TEXT` を含む直近のコマンドをコピーする。大文字小文字は区別しない（[下記](#oops-grep)） |
 | `oops init zsh` / `oops init bash` / `oops init fish` | シェルのスニペットを出力する（`eval` 用。fish は `\| source`） |
 | `oops doctor` | 記録・フック・クリップボード・設定・ログサイズを診断する |
 | `oops pause` / `oops resume` | 記録を止める／再開する。停止中は何もディスクに書かれない |
@@ -114,24 +128,25 @@ oops init fish | source
 | `oops record -- <shell>` | 内部用: 記録用プログラムの下でシェルを起動する。スニペットが呼び出す |
 | `oops --version`, `oops --help` | バージョンと使い方 |
 
-`oops`、`oops N`、`oops err` のオプション:
+`oops`、`oops N`、`oops err`、`oops pick`、`oops grep` のオプション:
 
 | オプション | 内容 |
 |---|---|
-| `-n N` | 直前の N コマンドをコピーする（`err` と併用すると直近の失敗した N コマンド） |
+| `-n N` | 直前の N コマンドをコピーする（`err` と併用すると直近の失敗した N コマンド、`grep` と併用すると一致した直近の N コマンド、`pick` と併用すると N 件を並べる） |
 | `--github` | GitHub の issue / PR コメント向けの書式にする |
 | `--time` | 各コマンドの開始時刻を `# 2026-10-31 19:30:09 +09:00` の行として付ける |
 | `--output-only` | `$ コマンド` の行を省き、出力だけをコピーする |
 | `-p`, `--print` | クリップボードの代わりに標準出力へ書き出す（`copied:` 行は出さない） |
 | `--json` | コマンドを JSON で標準出力へ書き出す（スクリプトやエージェント向け） |
 | `--gist` | [GitHub CLI](https://cli.github.com) で secret gist に上げ、その URL をコピーする（[下記](#--gist)） |
+| `--pick` | `grep` と併用すると、一致したものを番号付きで並べ、`oops pick` と同じように打った番号のものをコピーする |
 | `--show-secrets` | 秘密情報をマスクせず、置換テーブルも適用しない |
 
 `N` は正の整数で指定します。件数は位置引数の `N` または `-n N` のどちらかで 1 回だけ指定でき、併用や `-n` の繰り返しは使い方の誤りになります。対象のコマンドが指定件数より少なければ、見つかった分をコピーします。`-n` は上記の書式オプションと併用できます。
 
 `oops` 自身はコピー対象になりません。直前のコマンドが `oops` だった場合は、その前のコマンドがコピーされます。
 
-終了コード: `0` コピーした（または `--print`・`--json` で出力した、`--gist` で上げた）、`1` コピーしなかった（記録していない、まだコマンドがない、失敗したコマンドがない、一時停止中、クリップボードのコマンドが失敗、`--gist` で `gh` が失敗）、`2` 使い方の誤り。
+終了コード: `0` コピーした（または `--print`・`--json` で出力した、`--gist` で上げた）、`1` コピーしなかった（記録していない、まだコマンドがない、失敗したコマンドがない、その文字を含むコマンドがない、何も選ばなかった、一時停止中、クリップボードのコマンドが失敗、`--gist` で `gh` が失敗）、`2` 使い方の誤り。
 
 ### 標準の出力
 
@@ -219,6 +234,42 @@ gist: https://gist.github.com/you/4f1e8c0b2d9a7e6f5c3b1a0d9e8f7c6b (1 line)
 oops 自身は GitHub とやり取りしません。[GitHub CLI](https://cli.github.com) の `gh gist create` を呼ぶので、`gh` を入れて、一度 `gh auth login` でログインしておく必要があります。gist の中身は `oops.md` という1ファイルで、説明欄には1つ目のコマンドの行が入ります。`N`・`err`・`-n`・`--github`・`--time`・`--output-only` と併用できます。
 
 secret gist は一覧にも検索にも出ませんが、URL を知っていれば誰でも開けます。そのため秘密情報は必ずマスクします。`--show-secrets` を `--gist` と併用すると使い方の誤りになり、`--print`・`--json` との併用も同じです。要らなくなった gist は、gist.github.com か `gh gist delete` で消してください。クリップボードのツールが見つからないときも URL は表示し、コピーできなかったことを警告します。
+
+### `oops pick`
+
+`oops pick` は、このタブの直近 10 コマンドを古い順に番号付きで並べ、どれをコピーするか聞きます:
+
+```
+$ oops pick
+1  $ bundle exec rake            (exit 1, 84 lines, 19:30)
+2  $ git status                  (exit 0, 6 lines, 19:31)
+3  $ curl -s localhost:3000/api  (exit 0, 1 line, 19:32)
+pick> 1 3
+copied: $ bundle exec rake (85 lines)
+```
+
+番号を 1 つ、複数（`1 3`）、または範囲（`2-4`）で打つと、実行した順に、`oops 3` と同じ整形とマスクでコピーします。何も打たずに Enter を押すと何もコピーしません。一覧のコマンドもマスク済みです。`-n 20` で 20 件並べます。整形のオプションもそのまま使えます（`oops pick --github`、`oops pick -p | less` など。一覧と `pick>` は標準エラーに出るので、標準出力には本文だけが出ます）。
+
+### `oops grep`
+
+`oops pick` でさかのぼれるのは 10 コマンドまでです。もっと前のものは、コマンドか出力に含まれる言葉で探せます:
+
+```
+$ oops grep nomethoderror
+copied: $ bundle exec rspec (42 lines)
+```
+
+文字はそのまま比べ（`.` や `*` に特別な意味はありません）、大文字小文字は区別しません。出力の色も無視します。`grep` のあとの言葉はスペースでつなげるので、`oops grep no such file` のように引用符は要りません。`-` で始まる文字を探すときは前に `--` を置きます。`-n 3` で一致した直近の 3 コマンドを古い順にコピーし、`--pick` で一致したもの（最大 10 件、`-n N` で N 件）を並べて選べます:
+
+```
+$ oops grep docker --pick
+1  $ docker compose up -d     (exit 0, 3 lines, 18:02)
+2  $ docker compose logs web  (exit 0, 120 lines, 18:40)
+pick> 2
+copied: $ docker compose logs web (120 lines)
+```
+
+探すのはこのタブの記録だけです。比べるのはマスク前の文字ですが、コピーや一覧の中身はいつもどおりマスクされます。
 
 ### `oops status`
 
@@ -395,11 +446,11 @@ bundle exec exe/oops doctor
 
 ```sh
 gem build oops-cli.gemspec
-gem install ./oops-cli-0.6.0.gem     # ファイル名は lib/oops/version.rb に合わせる
+gem install ./oops-cli-0.8.0.gem     # ファイル名は lib/oops/version.rb に合わせる
 rbenv rehash                         # rbenv を使う場合のみ
 ```
 
-- gem は Ruby のバージョンごとに入ります。新しいタブが、インストールした Ruby とは別の Ruby を使っていると（たとえばリポジトリは 4.0.9 を指定しているのに、標準の Ruby が 3.3.5 の場合）、シェルの起動時に oops が見つからなくなります（bash では `bash: oops: command not found`、zsh では `command not found: oops` と出ます）。その Ruby でも `gem install` を実行してください（例: `RBENV_VERSION=3.3.5 gem install ./oops-cli-0.6.0.gem`）。
+- gem は Ruby のバージョンごとに入ります。新しいタブが、インストールした Ruby とは別の Ruby を使っていると（たとえばリポジトリは 4.0.9 を指定しているのに、標準の Ruby が 3.3.5 の場合）、シェルの起動時に oops が見つからなくなります（bash では `bash: oops: command not found`、zsh では `command not found: oops` と出ます）。その Ruby でも `gem install` を実行してください（例: `RBENV_VERSION=3.3.5 gem install ./oops-cli-0.8.0.gem`）。
 - 変更のたびに入れ直してください。インストールされた gem はコピーで、チェックアウトへのリンクではありません。
 - 削除するには `gem uninstall oops-cli` です。
 - `eval "$(oops init zsh)"` は、プロンプトで打つだけでなく rc ファイルに書いてください。記録されるシェルは rc ファイルを読み直すため、行がないとフックが入りません（`oops doctor` に `hooks: missing` と出ます）。
@@ -417,7 +468,7 @@ rbenv rehash                         # rbenv を使う場合のみ
 
 ## コントリビュート
 
-バグ報告、アイデア、プルリクエストを歓迎します。[CONTRIBUTING.ja.md](CONTRIBUTING.ja.md) を読んでください。`good first issue` のラベルが付いた issue が、始めやすい入口です。プルリクエストには、テストと rubocop の結果、新しいタブでの動作確認を必ず貼ってください（[プルリクエストに必ず貼るもの](CONTRIBUTING.ja.md#プルリクエストに必ず貼るもの)）。
+バグ報告、アイデア、プルリクエストを歓迎します。[CONTRIBUTING.ja.md](CONTRIBUTING.ja.md) を読んでください。`good first issue` のラベルが付いた issue が、始めやすい入口です。大きさ順に並べた一覧は [New contributors: start here](https://github.com/ysb3996-blip/oops/issues/100) にあります。プルリクエストには、テストと rubocop の結果、新しいタブでの動作確認を必ず貼ってください（[プルリクエストに必ず貼るもの](CONTRIBUTING.ja.md#プルリクエストに必ず貼るもの)）。
 
 ## 貢献してくれた人たち
 
@@ -429,11 +480,12 @@ rbenv rehash                         # rbenv を使う場合のみ
 <table>
   <tbody>
     <tr>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ysb3996-blip"><img src="https://avatars.githubusercontent.com/u/257992595?v=4?s=80" width="80px;" alt="ysb3996-blip"/><br /><sub><b>ysb3996-blip</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=ysb3996-blip" title="Code">💻</a> <a href="https://github.com/ysb3996-blip/oops/commits?author=ysb3996-blip" title="Documentation">📖</a> <a href="https://github.com/ysb3996-blip/oops/commits?author=ysb3996-blip" title="Tests">⚠️</a> <a href="#maintenance-ysb3996-blip" title="Maintenance">🚧</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ricky9408"><img src="https://avatars.githubusercontent.com/u/49530170?v=4?s=80" width="80px;" alt="Sanghyuk Lee"/><br /><sub><b>Sanghyuk Lee</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=ricky9408" title="Code">💻</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/agenticsymphony-tech"><img src="https://avatars.githubusercontent.com/u/326739730?v=4?s=80" width="80px;" alt="agenticsymphony-tech"/><br /><sub><b>agenticsymphony-tech</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=agenticsymphony-tech" title="Documentation">📖</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ShahadatTest"><img src="https://avatars.githubusercontent.com/u/179203101?v=4?s=80" width="80px;" alt="ShahadatTest"/><br /><sub><b>ShahadatTest</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=ShahadatTest" title="Code">💻</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/wolf4032"><img src="https://avatars.githubusercontent.com/u/144633223?v=4?s=80" width="80px;" alt="wolf4032"/><br /><sub><b>wolf4032</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=wolf4032" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ysb3996-blip"><img src="https://avatars.githubusercontent.com/u/257992595?v=4&size=80" width="80px" height="80px" alt="ysb3996-blip"/><br /><sub><b>ysb3996-blip</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=ysb3996-blip" title="Code">💻</a> <a href="https://github.com/ysb3996-blip/oops/commits?author=ysb3996-blip" title="Documentation">📖</a> <a href="https://github.com/ysb3996-blip/oops/commits?author=ysb3996-blip" title="Tests">⚠️</a> <a href="#maintenance-ysb3996-blip" title="Maintenance">🚧</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ricky9408"><img src="https://avatars.githubusercontent.com/u/49530170?v=4&size=80" width="80px" height="80px" alt="Sanghyuk Lee"/><br /><sub><b>Sanghyuk Lee</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=ricky9408" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/agenticsymphony-tech"><img src="https://avatars.githubusercontent.com/u/326739730?v=4&size=80" width="80px" height="80px" alt="agenticsymphony-tech"/><br /><sub><b>agenticsymphony-tech</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=agenticsymphony-tech" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ShahadatTest"><img src="https://avatars.githubusercontent.com/u/179203101?v=4&size=80" width="80px" height="80px" alt="ShahadatTest"/><br /><sub><b>ShahadatTest</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=ShahadatTest" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/wolf4032"><img src="https://avatars.githubusercontent.com/u/144633223?v=4&size=80" width="80px" height="80px" alt="wolf4032"/><br /><sub><b>wolf4032</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=wolf4032" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/jdotc1"><img src="https://avatars.githubusercontent.com/u/138259519?v=4&size=80" width="80px" height="80px" alt="Jeff"/><br /><sub><b>Jeff</b></sub></a><br /><a href="https://github.com/ysb3996-blip/oops/commits?author=jdotc1" title="Code">💻</a></td>
     </tr>
   </tbody>
 </table>

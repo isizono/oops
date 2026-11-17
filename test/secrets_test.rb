@@ -110,6 +110,103 @@ class SecretsTest < Minitest::Test
     }.each { |input, expected| assert_equal [expected, 1], mask(input), input }
   end
 
+  def test_hugging_face_access_tokens_masked
+    token = "hf_#{'Ab12' * 6}" # Synthetic; no real credential in source control.
+    assert_equal ["[secret]", 1], mask(token)
+    assert_equal ["model [secret] loaded", 1], mask("model #{token} loaded")
+  end
+
+  def test_hugging_face_token_near_misses_kept
+    token = "hf_#{'Ab12' * 6}"
+    ["hf_#{'A' * 15}", "not#{token}", "prefix_#{token}",
+     "#{token}_suffix", "hf-model-download"].each do |text|
+      assert_equal [text, 0], mask(text)
+    end
+  end
+
+  def test_linear_personal_api_keys_masked
+    token = "lin_api_#{'Ab12' * 10}"
+    assert_equal ["[secret]", 1], mask(token)
+    assert_equal ["Linear [secret] ready", 1], mask("Linear #{token} ready")
+  end
+
+  def test_linear_personal_api_key_near_misses_kept
+    token = "lin_api_#{'Ab12' * 10}"
+    ["lin_api_#{'A' * 39}", "lin_api_#{'A' * 41}",
+     "pre#{token}", "#{token}_suffix", "lin_api_example"].each do |text|
+      assert_equal [text, 0], mask(text)
+    end
+  end
+
+  def test_digitalocean_api_tokens_masked
+    %w[dop doo dor].each do |kind|
+      token = "#{kind}_v1_#{'a1b2c3d4' * 8}"
+      assert_equal ["[secret]", 1], mask(token)
+      assert_equal ["credential [secret] set", 1], mask("credential #{token} set")
+    end
+  end
+
+  def test_digitalocean_token_near_misses_kept
+    token = "dop_v1_#{'a1b2c3d4' * 8}"
+    ["dop_v1_#{'a' * 63}", "doo_v1_#{'b' * 65}",
+     "dor_v2_#{'c' * 64}", "dop_v1_#{'g' * 64}",
+     "not#{token}", "#{token}_suffix"].each do |text|
+      assert_equal [text, 0], mask(text)
+    end
+  end
+
+  def test_shopify_access_tokens_masked
+    %w[shpat shpca shppa].each do |prefix|
+      token = "#{prefix}_#{'Ab12' * 8}"
+      assert_equal ["[secret]", 1], mask(token)
+      assert_equal ["credential [secret] saved", 1], mask("credential #{token} saved")
+    end
+  end
+
+  def test_shopify_access_token_near_misses_kept
+    token = "shpat_#{'Ab12' * 8}"
+    ["shpat_#{'a' * 31}", "shpat_#{'a' * 31}_", "shpat_#{'a' * 31}-",
+     "not#{token}", "prefix_#{token}", "#{token}_suffix", "shpxx_#{'a' * 32}"].each do |text|
+      assert_equal [text, 0], mask(text)
+    end
+  end
+
+  def test_sentry_organization_tokens_masked
+    payload = "eyJpYXQiOi#{'A1b2' * 12}=="
+    secret = "#{'aB3/' * 10}x+y"
+    token = "sntrys_#{payload}_#{secret}"
+    assert_equal ["[secret]", 1], mask(token)
+    assert_equal ["credential [secret] saved", 1], mask("credential #{token} saved")
+    assert_equal ["[secret]-", 1], mask("#{token}-")
+    assert_equal ["[secret]", 1], mask("sntrys_eyJ#{'a' * 800}_#{secret}")
+  end
+
+  def test_sentry_organization_token_near_misses_kept
+    payload = "eyJpYXQiOi#{'A1b2' * 12}=="
+    secret = "x" * 43
+    token = "sntrys_#{payload}_#{secret}"
+    ["sntrys_#{payload}_#{'x' * 42}", "sntrys_#{payload}_#{'x' * 44}",
+     "sntrys_eyJabcd_#{secret}", "sntrys_eyJ#{'a' * 801}_#{secret}",
+     "not#{token}", "prefix_#{token}", "#{token}_suffix", "#{token}/suffix", "sntryu_#{secret}"].each do |text|
+      assert_equal [text, 0], mask(text)
+    end
+  end
+
+  def test_sendgrid_api_keys_masked
+    token = "SG.#{'Ab1_' * 5}Q-." + "#{'Cd4-' * 10}x_7"
+    assert_equal ["[secret]", 1], mask(token)
+    assert_equal ["sendgrid [secret] here", 1], mask("sendgrid #{token} here")
+  end
+
+  def test_sendgrid_api_key_near_misses_kept
+    prefix = "SG.#{'A' * 22}."
+    token = prefix + ("B" * 43)
+    ["SG.#{'A' * 21}.#{'B' * 43}", prefix + ("B" * 42),
+     prefix + ("B" * 44), "not#{token}", "#{token}_suffix"].each do |text|
+      assert_equal [text, 0], mask(text)
+    end
+  end
+
   def test_short_or_embedded_prefixes_are_not_tokens
     %w[sk-1 task-list-item-name-that-is-long-enough npm_run
        ask-me-anything-about-this-long-thing].each do |text|
@@ -158,7 +255,12 @@ class SecretsTest < Minitest::Test
 
   # Guards against quadratic matching; bounds are loose to avoid flakiness.
   def test_long_single_line_inputs_stay_linear
-    ['password="', 'token="a" ', '{"api_key": "abc123","name":"x"},'].each do |unit|
+    ['password="', 'token="a" ', '{"api_key": "abc123","name":"x"},', "dop_v1_#{'a' * 63} ",
+     "hf_#{'A' * 100_000}",
+     "lin_api_#{'A' * 100_000}_suffix",
+     "SG.#{'A' * 22}.#{'B' * 100_000}",
+     "shpat_#{'a' * 100_000}_suffix",
+     "sntrys_eyJ#{'A' * 100_000}_#{'x' * 43}"].each do |unit|
       small = unit * (500_000 / unit.size)
       big = unit * (2_000_000 / unit.size)
       assert_operator elapsed { mask(small) }, :<, 2.0
